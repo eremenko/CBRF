@@ -1,0 +1,6 @@
+s#@INSTALL_BINDIR@#/opt/netprobe/bin#g
+s#@INSTALL_LIBDIR@#/opt/netprobe/lib#g
+s#@INSTALL_LOGSDIR@#/opt/netprobe/logs#g
+s#@INSTALL_LOCKDIR@#/opt/netprobe/lock#g
+s#@INSTALL_OWNER@#netprobe#g
+s#@PERL_PATH@#/usr/local/avalon/bin/perl#g
