@@ -72,7 +72,7 @@ sub DESTROY {
 	my ($self) = shift ;
 
 	if (exists ($self->{'_need_delete_ipc_socket'})) {
-		$self->Debug ("DESTROY[$$]: Delete `%s': $!",$self->{'_ipc_socket'}) ;
+		$self->Debug ("DESTROY[$$]: Delete `%s'",$self->{'_ipc_socket'}) ;
 		unlink ($self->{'_ipc_socket'}) or
 			$self->Error ("DESTROY[$$]: Can't delete `%s': $!",$self->{'_ipc_socket'}) ;
 		delete $self->{'_need_delete_ipc_socket'} ;
@@ -81,21 +81,18 @@ sub DESTROY {
 
 sub Run ($) {
 	my ($self) = @_ ;
-	my ($sock,$loop_sock_wait,$loop_sock) ;
+	my ($sock,$loop_sock) ;
 	my ($rin,$win,$loop_state,@loop_queue,$rout,$wout) ;
 	my ($sock_buf,$loop_read_buf,$loop_write_buf,$loop_write_buf_count) ;
 
 	$0 = $self->{'_short_program_name'}. ": reading" ;
 	$sock = $self->{'socket'} ;
 
-	$self->Debug("Run[$$]: Making ipc socket") ;
-	$loop_sock_wait = IO::Socket::UNIX->new (Type=>SOCK_STREAM,
-		Local => $self->{'_ipc_socket'}
-	) or
+	$self->Debug ("Run[$$]: making socket/connect") ;
+	$loop_sock = IO::Socket::UNIX->new (Type=>SOCK_STREAM) or
 		$self->Fatal("Run[$$]: Can't create socket `".$self->{'_ipc_socket'}."': $!") ;
-	$self->{'_need_delete_ipc_socket'} = 1 ;
-	$loop_sock_wait->listen(1) or
-		$self->Fatal("Run[$$]: Can't create socket `".$self->{'_ipc_socket'}."': $!") ;
+	$loop_sock->connect(pack_sockaddr_un($self->{'_ipc_socket'})) or
+		$self->Fatal("Run[$$]: Can't connect socket `".$self->{'_ipc_socket'}."': $!") ;
 	
 	$loop_state = 1 ;
 	@loop_queue = () ;
@@ -107,14 +104,13 @@ sub Run ($) {
 		exit 2 ;
 	} ;
 
-	while (defined($sock) or scalar(@loop_queue) or $loop_state ==2) {
+	while (defined($sock) or scalar(@loop_queue) or defined ($loop_write_buf) or $loop_state ==2) {
 		my $chr ;
 
 		$rin = $win = '' ;
 		if (defined ($sock)) {
 			vec($rin,fileno($sock),1) = 1 ;
 		}
-		vec($rin,fileno($loop_sock_wait),1) = 1 ;
 		if (defined ($loop_sock)) {
 			if ($loop_state==1 and (scalar(@loop_queue) or defined ($loop_write_buf))) {
 				vec($win,fileno($loop_sock),1) = 1 ;
@@ -133,7 +129,6 @@ sub Run ($) {
 		else {
 # reading from OVO snmp_script
 			if (defined ($sock) and vec($rout,fileno($sock),1)==1) {
-				$self->Debug ("Run[$$]: ready for read sock") ;
 	
 				my $rc = $sock->sysread($chr,1) ;
 				if (!defined ($rc)) {
@@ -158,32 +153,9 @@ sub Run ($) {
 						$sock_buf .= $chr ;
 					}
 				}	
-			}
-			if (vec($rout,fileno($loop_sock_wait),1)==1) {
-				$self->Debug ("Run[$$]: ready for loop accept") ;
-				if (defined ($loop_sock)) {
-					my $dummy ;
-					$self->Debug ("already connect with Loop, skip it") ;
-					$dummy = $loop_sock_wait->accept() ;
-					if (!$dummy) {
-						if ($! == POSIX::EINTR() and $self->{'catchint'}) {
-							next ;
-						}
-					}
-					undef $dummy ;
-				}
-				else {
-					$loop_sock = $loop_sock_wait->accept() ;
-					if (!$loop_sock) {
-						if ($! == POSIX::EINTR() and $self->{'catchint'}) {
-							next ;
-						}
-						$self->Error("Run[$$]: %s server failed to accept(loop_sock_wait): %s",ref($self),$loop_sock_wait->error() || $!) ;
-					}
-				}
+				#$self->Debug ("Run[$$]: read sock {%s}",defined($sock_buf)?$sock_buf:"(undef)") ;
 			}
 			if (defined ($loop_sock) and vec($rout,fileno($loop_sock),1)==1) {
-				$self->Debug ("Run[$$]: ready for read loop sock") ;
 
 				my $rc = $loop_sock->sysread($chr,$loop_state==2 ? 1 : 0) ;
 				if (!defined ($rc)) {
@@ -211,15 +183,16 @@ sub Run ($) {
 						$loop_read_buf .= $chr ;
 					}
 				}
+				#$self->Debug ("Run[$$]: read ipc_sock {%s}",defined($loop_read_buf)?$loop_read_buf:"(undef)") ;
 # EOF
 			}
 			if (defined ($loop_sock) and $loop_state==1 and vec($wout,fileno($loop_sock),1)==1) {
-				$self->Debug ("Run[$$]: ready for write loop sock") ;
 
 				if (!defined ($loop_write_buf) and scalar(@loop_queue)) {
 					$loop_write_buf = shift (@loop_queue) . "\n";
 					$loop_write_buf_count = 0 ;
 				}
+				#$self->Debug ("Run[$$]: write ipc_sock {%s} %d",$loop_write_buf,$loop_write_buf_count) ;
 				my $rc = $loop_sock->syswrite ($loop_write_buf,1,$loop_write_buf_count) ;
 				if (!defined ($rc)) {
 					if ($! == POSIX::EINTR() and $self->{'catchint'}) {
@@ -240,34 +213,59 @@ sub Run ($) {
 	}
 }
 
-sub Loop ($) {
+sub Send_Trap_To_KOS {
+	my ($self,$ref) = @_ ;
+
+	delete $self->{'_need_delete_ipc_socket'} ;
+	foreach (@{$ref}) {
+		$self->Log('info',"Send_KOS[$$]: `".$_."'") ;
+	}
+}
+
+sub Circle_Queue {
 	my ($self) = @_ ;
-	my ($loop_sock) ;
-	my ($result,$last_time) ;
-	my ($rin,$rout,$sock_buf,$chr) ;
-	my ($win,$wout,$send_ok_buf,$send_ok_buf_count) ;
-	my ($loop_state) ;
+	my ($ipc_sock_wait,@ipc_socks) ;
+	my ($out_buf,$out_buf_count) ;
+	my ($rin,$rout,$win,$wout,$last_time) ;
+	my (@queue,$send_flag) ;
 
-	$0 = $self->{'_short_program_name'}.": loop" ;
-	$self->Debug ("Loop[$$]: start") ;
-
-	$self->Debug ("Loop[$$]: making socket/connect") ;
-	$loop_sock = IO::Socket::UNIX->new (Type=>SOCK_STREAM) or
-		$self->Fatal("Loop[$$]: Can't create socket `".$self->{'_ipc_socket'}."': $!") ;
-	$loop_sock->connect(pack_sockaddr_un($self->{'_ipc_socket'})) or
-		$self->Fatal("Loop[$$]: Can't connect socket `".$self->{'_ipc_socket'}."': $!") ;
+	$0 = $self->{'_short_program_name'}.": circle queue" ;
+	$self->Debug("Circle_Queue[$$]: Making ipc socket") ;
+	$ipc_sock_wait = IO::Socket::UNIX->new (Type=>SOCK_STREAM,
+		Local => $self->{'_ipc_socket'}
+	) or
+		$self->Fatal("Circle_Queue[$$]: Can't create socket `".$self->{'_ipc_socket'}."': $!") ;
+	$self->{'_need_delete_ipc_socket'} = 1 ;
+	$ipc_sock_wait->listen(1) or
+		$self->Fatal("Circle_Queue[$$]: Can't create socket `".$self->{'_ipc_socket'}."': $!") ;
 	
-	undef $sock_buf ;
-	undef $result ;
+	$SIG{'PIPE'} = sub {
+		$self->Debug ("SIGPIPE,i dont know WTF") ;
+	} ;
+	$SIG{'TERM'} = sub {
+		$self->DESTROY() ;
+		exit 2 ;
+	} ;
+
+	undef @queue ;
 	$last_time = time() ;
-	$loop_state = 1 ;
-	while (defined ($loop_sock) or defined ($result)) {
+	$send_flag = 0 ;
+	while (defined($ipc_sock_wait) or scalar (@ipc_socks)) {
+		my $chr ;
 
 		$rin = $win = '' ;
-		if (defined ($loop_sock)) {
-			vec ($rin,fileno($loop_sock),1) = 1 ;
-			if ($loop_state==2) {
-				vec ($win,fileno($loop_sock),1) = 1 ;
+# wait accept
+		if (defined ($ipc_sock_wait)) {
+			vec($rin,fileno($ipc_sock_wait),1) = 1 ;
+		}
+		foreach my $ipc_sock (@ipc_socks) {
+			if (defined ($ipc_sock->{socket})) {
+# reading from Run
+				vec($rin,fileno($ipc_sock->{socket}),1) = 1 ;
+# writing to Ru
+				if ($ipc_sock->{state}==2) {
+					vec($win,fileno($ipc_sock->{socket}),1) = 1 ;
+				}
 			}
 		}
 		my $nfound = select ($rout=$rin,$wout=$win,undef,1) ;
@@ -275,85 +273,115 @@ sub Loop ($) {
 			if ($! == POSIX::EINTR() and $self->{'catchint'}) {
 				next ;
 			}
-			$self->Error("Loop[$$]: %s server failed to select(loop_sock): %s",ref($self),$loop_sock->error() || $!) ;
-			undef $loop_sock ;
+			$self->Error("Circle_Queue[$$]: %s server failed to select(): %s",ref($self),$!) ;
 		}
 
-		if (defined ($loop_sock) and $loop_state==1 and vec($rout,fileno($loop_sock),1)==1) {
-			$self->Debug ("Loop[$$]: ready for read sock") ;
-			my $rc = $loop_sock->sysread($chr,1) ;
-			if (!defined ($rc)) {
+		if (defined ($ipc_sock_wait) and vec($rout,fileno($ipc_sock_wait),1)==1) {
+			$self->Debug ("Circle_Queue[$$]: ready for ipc accept") ;
+			my $sock = $ipc_sock_wait->accept() ;
+			if (!$sock) {
 				if ($! == POSIX::EINTR() and $self->{'catchint'}) {
 					next ;
 				}
-				$self->Error("Loop[$$]: %s server failed to read(loop_sock): %s",ref($self),$loop_sock->error() || $!) ;
-				undef $loop_sock ;
-			}
-			elsif ($rc==0) {
-				$self->Debug("Loop[$$]: close(loop_sock)") ;
-				undef $loop_sock ;
+				$self->Error("Run[$$]: %s server failed to accept(ipc_sock_wait): %s",ref($self),$ipc_sock_wait->error() || $!) ;
 			}
 			else {
-				if ($chr eq chr(10)) {
-					if (!defined ($result)) {
-						$result = [] ;
+				my $ref = {} ;
+				$ref->{socket} = $sock ;
+				$ref->{state} = 1 ;
+				$ref->{in_buf} = undef ;
+				push (@ipc_socks,$ref) ;
+			}
+		}
+		foreach my $ipc_sock (@ipc_socks) {
+# reading
+			if (defined ($ipc_sock->{socket}) and vec($rout,fileno($ipc_sock->{socket}),1)==1) {
+				my $sock = $ipc_sock->{socket} ;
+	
+				my $rc = $sock->sysread($chr,$ipc_sock->{state}==2 ? 0 : 1) ;
+				if (!defined ($rc)) {
+					if ($! == POSIX::EINTR() and $self->{'catchint'}) {
+						next ;
 					}
-					push (@{$result},$sock_buf) ;
-					undef $sock_buf ;
-					$loop_state = 2 ;
+					$self->Error("Circle_Queue[$$]: %s server failed to read(ipc_sock): %s",ref($self),$sock->error() || $!) ;
+					undef $ipc_sock->{socket} ;
+				}
+				elsif ($rc==0) {
+# EOF
+					$self->Debug ("Circle_Queue[$$]: ipc_sock(%d) EOF",$ipc_sock->{in_buf}) ;
+					undef $ipc_sock->{socket} ;
+					if (defined ($ipc_sock->{in_buf})) {
+						$self->Error("Circle_Queue[$$]: %s read(ipc_sock) not a full string `%s', skip it",ref($self),$ipc_sock->{in_buf}) ;
+					}
+					undef $ipc_sock->{in_buf} ;
 				}
 				else {
-					$sock_buf .= $chr ;
-			$self->Debug ("Loop[$$]: {$sock_buf}") ;
-				}
+					if ($chr eq chr(10)) {
+						push (@queue,$ipc_sock->{in_buf}) ;
+						undef ($ipc_sock->{in_buf}) ;
+						$ipc_sock->{state} = 2 ;
+					}
+					else {
+						$ipc_sock->{in_buf} .= $chr ;
+					}
+				}	
+				#$self->Debug ("Circle_Queue[$$]: ready for read ipc_sock(%d) {%s}",defined($ipc_sock->{socket})?$ipc_sock->{socket}->fileno():-1,
+				#	defined($ipc_sock->{in_buf})?$ipc_sock->{in_buf}:"(undef)") ;
 			}
-		}
-		if (defined ($loop_sock) and $loop_state==2 and vec($wout,fileno($loop_sock),1)==1) {
-			$self->Debug ("Run[$$]: ready for write loop sock") ;
+# writing
+			if (defined ($ipc_sock->{socket}) and $ipc_sock->{state}==2 and vec($wout,fileno($ipc_sock->{socket}),1)==1) {
 
-			if (!defined ($send_ok_buf)) {
-				$send_ok_buf = "+OK\n";
-				$send_ok_buf_count = 0 ;
-			}
-			my $rc = $loop_sock->syswrite ($send_ok_buf,1,$send_ok_buf_count) ;
-			if (!defined ($rc)) {
-				if ($! == POSIX::EINTR() and $self->{'catchint'}) {
-					next ;
+				if (!defined ($out_buf)) {
+					$out_buf = "+OK\n";
+					$out_buf_count = 0 ;
 				}
-				$self->Error("Run[$$]: %s server failed to write(loop_sock): %s",ref($self),$loop_sock->error() || $!) ;
-				undef $loop_sock ;
-			}
-			else {
-				$send_ok_buf_count += $rc ;
-				if (length($send_ok_buf)<=$send_ok_buf_count) {
-					undef $send_ok_buf ;
-					$loop_state = 1 ;
+				my $rc = $ipc_sock->{socket}->syswrite ($out_buf,1,$out_buf_count) ;
+				if (!defined ($rc)) {
+					if ($! == POSIX::EINTR() and $self->{'catchint'}) {
+						next ;
+					}
+					$self->Error("Run[$$]: %s server failed to write ipc_sock(%d): %s",ref($self),$ipc_sock->{socket}->fileno(),$ipc_sock->{socket}->error() || $!) ;
+					undef $ipc_sock->{socket} ;
 				}
+				else {
+					$out_buf_count += $rc ;
+					if (length($out_buf)<=$out_buf_count) {
+						undef $out_buf ;
+						$ipc_sock->{state} = 1 ;
+					}
+				}
+				#$self->Debug ("Circle_Queue[$$]: ready for write ipc_sock {%s} %d",defined($out_buf)?$out_buf:"(undef)",$out_buf_count) ;
 			}
 		}
-		
+
+# checking empty connections
+		for (my $i = 0; $i< scalar(@ipc_socks) ; $i++) {
+			if (!defined ($ipc_socks[$i]->{socket}) and !defined($ipc_socks[$i]->{in_buf})) {
+				splice (@ipc_socks,$i,1) ;
+			}
+		}
+
+# waiting for send
+
 		if ($last_time+$self->{'_retransmit_sleep_time'}<time()) {
-			next if (defined ($sock_buf)) ;
-			next if (!defined ($result)) ;
+			next if (!scalar(@queue)) ;
+			if ((grep {defined ($_->{in_buf})} @ipc_socks) and !$send_flag) {
+# small timeout for queue reading
+				$last_time += 4 ;		# year! its a magic!
+				$send_flag = 1 ;
+				next ;
+			}
 
 			my (@array) ;
-			@array = @{$result} ;
+			@array = @queue ;
 			$self->ChildFunc('Send_Trap_To_KOS',\@array) ;
-			undef $result ;
+			undef @queue ;
 			$last_time = time () ;
+			$send_flag = 0 ;
 		}
+
 	}
-
-	undef $loop_sock ;
-	$self->Debug ("Loop[$$]: finish") ;
-}
-
-sub Send_Trap_To_KOS {
-	my ($self,$ref) = @_ ;
-
-	foreach (@{$ref}) {
-		$self->Log('info',"Send_KOS[$$]: `".$_."'") ;
-	}
+	$self->Debug("Circle_Queue[$$]: exit ;(") ;
 }
 
 package main ;
@@ -379,8 +407,8 @@ my $server = NetProbe::CBR::AVSU::Daemon->new ({
 	'localpath' => NETPROBE_SOCKETFILE,
 	'proto' => 'unix',
 #	'user' => 'netprobe',
-	'loop-child' => 1,
-	'loop-timeout' => 20,
+#	'loop-child' => 1,
+#	'loop-timeout' => 20,
 	'mode' => 'fork',
 	'logfile' => $log_file,
 	'listen' => 1,
@@ -426,6 +454,7 @@ $SIG{'TERM'} = sub {
 } ;
 
 $server->Log("start Bind()") ;
+$server->ChildFunc("Circle_Queue") ;
 $server->Bind() ;
 
 exit 0 ;
