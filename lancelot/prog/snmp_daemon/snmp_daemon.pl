@@ -1,4 +1,4 @@
-#!@PERL_PATH@
+#!/opt/perl/bin/perl
 #
 # Copyright (C) 2008-2009 Sergey A.Eremenko (eremenko.s@gmail.com)
 # Copyright (C) 2009 NetProbe, Llc (info@net-probe.ru)
@@ -22,36 +22,24 @@ use strict ;
 use warnings ;
 use Config ;
 
-my $style ;
-
-BEGIN {
-if (exists($Config{installstyle})) {
-        $style = $Config{installstyle} ;
-        $style .= "/" ;
-        $style =~ s{^lib\/}{} ;
-}
-else {
-        $style = "" ;
-}
-}
-use lib "@INSTALL_LIBDIR@/${style}site_perl/$Config{PERL_REVISION}.$Config{PERL_VERSION}.$Config{PERL_SUBVERSION}" ;
-use lib "@INSTALL_LIBDIR@/${style}site_perl/$Config{PERL_REVISION}.$Config{PERL_VERSION}.$Config{PERL_SUBVERSION}/mach" ;
+use lib "/opt/netprobe/lib/perl5/site_perl/$Config{PERL_REVISION}.$Config{PERL_VERSION}.$Config{PERL_SUBVERSION}" ;
+use lib "/opt/netprobe/lib/perl5/site_perl/$Config{PERL_REVISION}.$Config{PERL_VERSION}.$Config{PERL_SUBVERSION}/mach" ;
 
 require Net::Daemon ;
 
-use constant NETPROBE_BINDIR => '@INSTALL_BINDIR@' ;
-use constant NETPROBE_LOCKDIR => '@INSTALL_LOCKDIR@' ;
-use constant NETPROBE_LOGFILE => '@INSTALL_LOGSDIR@/%s.log' ;
-use constant NETPROBE_PIDFILE => '@INSTALL_LOCKDIR@/%s.pid' ;
+use constant NETPROBE_BINDIR => '/opt/netprobe/bin' ;
+use constant NETPROBE_LOCKDIR => '/opt/netprobe/lock' ;
+use constant NETPROBE_LOGFILE => '/opt/netprobe/logs/%s.log' ;
+use constant NETPROBE_PIDFILE => '/opt/netprobe/lock/%s.pid' ;
 
-use constant NETPROBE_SOCKETFILE => '@INSTALL_LOCKDIR@/.snmp_daemon.socket' ;
-use constant NETPROBE_IPC_SOCKETFILE => '@INSTALL_LOCKDIR@/.snmp_daemon.ipc_socket' ;
-use constant NETPROBE_LOCKFILE => '@INSTALL_LOCKDIR@/.snmp_daemon.lock' ;
+use constant NETPROBE_SOCKETFILE => '/opt/netprobe/lock/.snmp_daemon.socket' ;
+use constant NETPROBE_IPC_SOCKETFILE => '/opt/netprobe/lock/.snmp_daemon.ipc_socket' ;
+use constant NETPROBE_LOCKFILE => '/opt/netprobe/lock/.snmp_daemon.lock' ;
 
 package NetProbe::CBR::AVSU::Daemon ;
 
 use IO::File ;
-use LockFile::Simple ;
+#use LockFile::Simple ;
 use IO::Socket::UNIX ;
 #use POSIX qw (:sys_wait_h} ;
 use English ;
@@ -479,32 +467,9 @@ defined (my $log_file = IO::File->new(sprintf(NETPROBE_LOGFILE,$short_program_na
 	die "Can't open log file: $!\n" ;
 $log_file->autoflush (1) ;
 
-my $lock = LockFile::Simple->make (
-        -format => NETPROBE_LOCKFILE,
-        -autoclean => 1,
-        -max => 6,
-        -delay => 1,
-        -warn => 0,
-        -hold => 0,
-        -stale => 1,
-        -efunc => undef,
-        -wfunc => undef,
-
-#       autoclean               keep track of locks and release pending one at END time
-#   max                         max number of attempts
-#       delay                   seconds to wait between attempts
-#       format                  how to derive lockfile from file to be locked
-#       hold                    max amount of seconds before breaking lock (0 for never)
-#       ext                             lock extension
-#       nfs                             true if lock must "work" on top of NFS
-#       stale                   try to detect stale locks via SIGZERO and delete them
-#       warn                    flag to turn warnings on
-#       wmin                    warn once after that many waiting seconds
-#       wafter                  warn every that many seconds after first warning
-#       wfunc                   warning function to be called
-#       efunc                   error function to be called
-
-) ;
+############################################################################################################################
+# add locking!!!
+############################################################################################################################
 
 my $server = NetProbe::CBR::AVSU::Daemon->new ({
 	'pidfile' => sprintf(NETPROBE_PIDFILE,$short_program_name),
@@ -521,7 +486,7 @@ my $server = NetProbe::CBR::AVSU::Daemon->new ({
 	'np_short_program_name' => ${short_program_name},
 	'np_lock_file' => NETPROBE_LOCKFILE,
 	'np_retransmit_sleep_time' => 5,
-	'np_kos_host' => '10.125.64.30',
+	'np_kos_host' => 'localhost',
 	'np_kos_port' => 3246,
 }) ;
 
@@ -559,16 +524,9 @@ $SIG{'TERM'} = sub {
 	exit 2 ;
 } ;
 
-if ($lock->lock (NETPROBE_LOCKFILE)) {
-        $server->Log("start ${short_program_name}") ;
-	$server->ChildFunc("Circle_Queue") ;
-	$server->Bind() ;
-        $server->Log("finish ${short_program_name}") ;
-        $lock->unlock(NETPROBE_LOCKFILE) ;
-}
-else {
-        $server->Error ("Can't obtain lock `".NETPROBE_LOCKFILE."', skip run") ;
-}
+$server->Log("start Bind()") ;
+$server->ChildFunc("Circle_Queue") ;
+$server->Bind() ;
 
 exit 0 ;
 

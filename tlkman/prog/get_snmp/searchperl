@@ -1,0 +1,1 @@
+find / -name perl -path "*/bin/*" -print 2>/dev/null | sh perlversion

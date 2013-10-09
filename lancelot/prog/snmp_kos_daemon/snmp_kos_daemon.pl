@@ -1,4 +1,4 @@
-#!@PERL_PATH@
+#!/usr/local/avalon/bin/perl
 #
 # Copyright (C) 2008-2009 Sergey A.Eremenko (eremenko.s@gmail.com)
 # Copyright (C) 2009 NetProbe, Llc (info@net-probe.ru)
@@ -34,19 +34,19 @@ else {
 	$style = "" ;
 }
 }
-use lib "@INSTALL_LIBDIR@/${style}site_perl/$Config{PERL_REVISION}.$Config{PERL_VERSION}.$Config{PERL_SUBVERSION}" ;
-use lib "@INSTALL_LIBDIR@/${style}site_perl/$Config{PERL_REVISION}.$Config{PERL_VERSION}.$Config{PERL_SUBVERSION}/mach" ;
+use lib "/opt/netprobe/lib/${style}site_perl/$Config{PERL_REVISION}.$Config{PERL_VERSION}.$Config{PERL_SUBVERSION}" ;
+use lib "/opt/netprobe/lib/${style}site_perl/$Config{PERL_REVISION}.$Config{PERL_VERSION}.$Config{PERL_SUBVERSION}/mach" ;
 
 require Net::Daemon ;
 
-use constant NETPROBE_BINDIR => '@INSTALL_BINDIR@' ;
-use constant NETPROBE_LOCKDIR => '@INSTALL_LOCKDIR@' ;
-use constant NETPROBE_LOGFILE => '@INSTALL_LOGSDIR@/%s.log' ;
-use constant NETPROBE_PIDFILE => '@INSTALL_LOCKDIR@/%s.pid' ;
+use constant NETPROBE_BINDIR => '/opt/netprobe/bin' ;
+use constant NETPROBE_LOCKDIR => '/opt/netprobe/lock' ;
+use constant NETPROBE_LOGFILE => '/opt/netprobe/logs/%s.log' ;
+use constant NETPROBE_PIDFILE => '/opt/netprobe/lock/%s.pid' ;
 
-use constant NETPROBE_SOCKETFILE => '@INSTALL_LOCKDIR@/.snmp_kos_daemon.socket' ;
-use constant NETPROBE_IPC_SOCKETFILE => '@INSTALL_LOCKDIR@/.snmp_kos_daemon.ipc_socket' ;
-use constant NETPROBE_LOCKFILE => '@INSTALL_LOCKDIR@/.snmp_kos_daemon.lock' ;
+use constant NETPROBE_SOCKETFILE => '/opt/netprobe/lock/.snmp_kos_daemon.socket' ;
+use constant NETPROBE_IPC_SOCKETFILE => '/opt/netprobe/lock/.snmp_kos_daemon.ipc_socket' ;
+use constant NETPROBE_LOCKFILE => '/opt/netprobe/lock/.snmp_kos_daemon.lock' ;
 
 package NetProbe::CBR::AVSU::KOS_Daemon ;
 
@@ -204,7 +204,7 @@ my $lock = LockFile::Simple->make (
 
 my $server = NetProbe::CBR::AVSU::KOS_Daemon->new ({
         'pidfile' => sprintf(NETPROBE_PIDFILE,$short_program_name),
-        'user' => '@INSTALL_OWNER@',
+        'user' => 'netprobe',
 #       'loop-child' => 1,
 #       'loop-timeout' => 20,
         'mode' => 'fork',

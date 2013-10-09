@@ -24,4 +24,7 @@ INSTALL_LOGSDIR=/opt/netprobe/logs
 INSTALL_LOCKDIR=/opt/netprobe/lock
 INSTALL_OWNER=$(shell id -run)
 
-SED=/bin/sed
+pathsearch=$(firstword $(wildcard $(addsuffix /$(1),/bin /usr/bin)))
+#SED=/bin/sed
+SED := $(call pathsearch,sed)
+

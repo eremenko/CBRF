@@ -1,0 +1,31 @@
+P_REV=0
+P_VER=0
+P_SUB=0
+while read perlbin ; do
+	("$perlbin" -V:PERL_REVISION -V:PERL_VERSION -V:PERL_SUBVERSION 2>/dev/null ) | awk -F"'" -fperlversion.awk  | read rev ver sub
+	if [ "$P_REV" -lt "$rev" ] ; then
+		P_REV="$rev"
+		P_VER="$ver"
+		P_SUB="$sub"
+		PERL_BIN="$perlbin"
+		continue
+	fi
+	if [ "$P_VER" -lt "$ver" ] ; then
+		P_VER="$ver"
+		P_SUB="$sub"
+		PERL_BIN="$perlbin"
+		continue
+	fi
+	if [ "$P_SUB" -lt "$sub" ] ; then
+		P_SUB="$sub"
+		PERL_BIN="$perlbin"
+		continue
+	fi
+done
+if [ x"$PERL_BIN" = x ] ; then
+	echo perl not found >&2
+	exit 2
+else
+	echo "$PERL_BIN"
+	exit 0
+fi
