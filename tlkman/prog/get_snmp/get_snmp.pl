@@ -48,7 +48,7 @@ $loop_sock = IO::Socket::UNIX->new (Type=>SOCK_STREAM) or
 $loop_sock->connect(pack_sockaddr_un(NETPROBE_SOCKETFILE)) or
                 die("$0: Can't connect socket `".NETPROBE_SOCKETFILE."': $!") ;
 
-print $loop_sock "AAAAAAAAAAAAAAAAAAAAA\n" ;
-print $loop_sock "BBBBBBBBBBBBBBBBBBBBBB\n" ;
+print $loop_sock "A23456789A1234567890\n" ;
+print $loop_sock "B23456789B1234567890B\n" ;
 undef $loop_sock ;
  

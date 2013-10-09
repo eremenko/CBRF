@@ -1,0 +1,5 @@
+s#@INSTALL_BINDIR@#/usr/local/netprobe/bin#g
+s#@INSTALL_LIBDIR@#/opt/netprobe/lib#g
+s#@INSTALL_LOGSDIR@#/opt/netprobe/logs#g
+s#@INSTALL_LOCKDIR@#/opt/netprobe/lock#g
+s#@INSTALL_OWNER@#cae#g

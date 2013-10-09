@@ -22,18 +22,18 @@ use strict ;
 use warnings ;
 use Config ;
 
-use lib "@INSTALL_LIBDIR@/perl5/site_perl/$Config{PERL_REVISION}.$Config{PERL_VERSION}.$Config{PERL_SUBVERSION}" ;
+use lib "/opt/netprobe/lib/perl5/site_perl/$Config{PERL_REVISION}.$Config{PERL_VERSION}.$Config{PERL_SUBVERSION}" ;
 
 require Net::Daemon ;
 
-use constant NETPROBE_BINDIR => '@INSTALL_BINDIR@' ;
-use constant NETPROBE_LOCKDIR => '@INSTALL_LOCKDIR@' ;
-use constant NETPROBE_LOGFILE => '@INSTALL_LOGSDIR@/%s.log' ;
-use constant NETPROBE_PIDFILE => '@INSTALL_LOCKDIR@/%s.pid' ;
+use constant NETPROBE_BINDIR => '/usr/local/netprobe/bin' ;
+use constant NETPROBE_LOCKDIR => '/opt/netprobe/lock' ;
+use constant NETPROBE_LOGFILE => '/opt/netprobe/logs/%s.log' ;
+use constant NETPROBE_PIDFILE => '/opt/netprobe/lock/%s.pid' ;
 
-use constant NETPROBE_SOCKETFILE => '@INSTALL_LOCKDIR@/.snmp_daemon.socket' ;
-use constant NETPROBE_IPC_SOCKETFILE => '@INSTALL_LOCKDIR@/.snmp_daemon.ipc_socket' ;
-use constant NETPROBE_LOCKFILE => '@INSTALL_LOCKDIR@/.snmp_daemon.lock' ;
+use constant NETPROBE_SOCKETFILE => '/opt/netprobe/lock/.snmp_daemon.socket' ;
+use constant NETPROBE_IPC_SOCKETFILE => '/opt/netprobe/lock/.snmp_daemon.ipc_socket' ;
+use constant NETPROBE_LOCKFILE => '/opt/netprobe/lock/.snmp_daemon.lock' ;
 
 package NetProbe::CBR::AVSU::Daemon ;
 
